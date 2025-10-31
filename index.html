@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mythic Zoo — WebXR (Quest/PC) · Wander Hologram</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#0a0b10; color:#e7eaf0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Arial, sans-serif; }
+    #ui { position:fixed; top:12px; left:12px; z-index:10; background:rgba(10,12,16,.66); backdrop-filter: blur(6px); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 12px; width:392px; max-height:88vh; overflow:auto; }
+    #ui h1 { margin:0 0 8px 0; font-size:16px; letter-spacing:.2px; }
+    #ui .row { display:flex; align-items:center; gap:8px; margin:8px 0; }
+    #ui .col { display:flex; flex-direction:column; gap:6px; }
+    #ui label { font-size:13px; opacity:.95; min-width:78px; }
+    #ui input[type="range"], #ui select, #ui input[type="number"] { flex:1; }
+    #ui input[type="file"] { width:100%; }
+    #ui button { cursor:pointer; padding:6px 10px; border-radius:10px; background:#1b1f2a; color:#e7eaf0; border:1px solid rgba(255,255,255,.1); }
+    #ui button:hover { background:#222838; }
+    #ui small { opacity:.85; }
+    #hint { font-size:12px; opacity:.85; line-height:1.4; margin-top:6px; }
+    #drop { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(84,132,255,.12); border:2px dashed rgba(84,132,255,.5); color:#cdd8ff; font-size:20px; z-index:9; }
+    #err { position:fixed; right:12px; bottom:12px; background:rgba(255,0,0,.12); border:1px solid rgba(255,0,0,.35); color:#ffd6d6; padding:10px 12px; border-radius:12px; display:none; max-width:40vw; z-index:11; font-size:12px; white-space:pre-wrap; }
+    #gear { position:fixed; top:12px; right:12px; z-index:12; width:42px; height:42px; border-radius:50%; border:1px solid rgba(255,255,255,.2); background:rgba(20,24,34,.7); display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
+    #gear:hover { background:rgba(30,36,52,.85); }
+    #vrTip { position:fixed; bottom:14px; left:14px; z-index:10; background:rgba(10,12,16,.66); border:1px solid rgba(255,255,255,.08); padding:8px 10px; border-radius:10px; font-size:12px; }
+    .subtle { opacity:.85; font-size:12px; }
+    .divider { height:1px; background:rgba(255,255,255,.08); margin:6px 0 8px; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>🦁 Mythic Zoo — Wander Hologram</h1>
+    <div class="row"><input id="file" type="file" accept="image/*" multiple></div>
+
+    <div class="row"><label>모드(기본)</label>
+      <select id="mode">
+        <option value="parallax">홀로그램(패럴랙스 레이어)</option>
+        <option value="depth">홀로그램(깊이 변형: 업로드 이미지 권장)</option>
+        <option value="billboard">단일 평면</option>
+      </select>
+    </div>
+    <div class="row"><label>레이어(기본) <span id="layerVal">3</span></label><input id="layers" type="range" min="1" max="9" step="1" value="3"></div>
+    <div class="row" id="depthRow" style="display:none"><label>깊이(기본) <span id="depthVal">0.060</span></label><input id="depthScale" type="range" min="0" max="0.2" step="0.0025" value="0.06"></div>
+    <div class="row"><label>활동 반경 <span id="arenaVal">3.5</span>m</label><input id="arena" type="range" min="2" max="8" step="0.1" value="3.5"></div>
+    <div class="row"><label>자유 이동</label><select id="wanderEn"><option value="on">켜기</option><option value="off">끄기</option></select></div>
+    <div class="row"><label>속도 <span id="spdVal">0.55</span>m/s</label><input id="wanderSpd" type="range" min="0" max="2" step="0.01" value="0.55"></div>
+    <div class="row"><label>회전 <span id="turnVal">1.20</span>rad/s</label><input id="turnRate" type="range" min="0.2" max="3" step="0.05" value="1.2"></div>
+    <div class="row"><label>회피 <span id="sepVal">0.60</span></label><input id="separation" type="range" min="0" max="1.5" step="0.05" value="0.6"></div>
+    <div class="row"><label>바운스 <span id="bobVal">0.18</span></label><input id="bobAmp" type="range" min="0" max="0.6" step="0.01" value="0.18"></div>
+
+    <div class="divider"></div>
+    <div class="col">
+      <b>스프라이트 분할(한 이미지에 여러 포즈일 때)</b>
+      <div class="row"><label>분할</label>
+        <select id="sliceEn"><option value="off">끄기(1x1)</option><option value="on">켜기</option></select>
+      </div>
+      <div class="row"><label>행×열</label>
+        <input id="sliceRows" type="number" min="1" max="6" step="1" value="1">
+        <input id="sliceCols" type="number" min="1" max="6" step="1" value="1">
+      </div>
+      <small class="subtle">예: 4포즈가 한 이미지에 2×2로 있다면 분할=켜기, 행=2, 열=2 → 업로드 시 4마리 생성</small>
+    </div>
+
+    <div class="divider"></div>
+    <div class="col">
+      <b>VIP(해태) 강조</b>
+      <div class="row"><label>VIP</label><select id="vipEn"><option value="on">켜기</option><option value="off">끄기</option></select></div>
+      <div class="row"><label>크기 <span id="vipScaleVal">1.40</span>x</label><input id="vipScale" type="range" min="1" max="2.2" step="0.05" value="1.4"></div>
+      <div class="row"><button id="markVIP">마지막 추가를 VIP로</button></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="col">
+      <b>개체별 설정(저장/불러오기)</b>
+      <div class="row"><label>동물 선택</label><select id="creSel"></select></div>
+      <div class="row"><label>모드</label>
+        <select id="creMode">
+          <option value="parallax">패럴랙스</option>
+          <option value="depth">깊이</option>
+          <option value="billboard">평면</option>
+        </select>
+      </div>
+      <div class="row"><label>크기 <span id="creScaleVal">1.00</span>x</label><input id="creScale" type="range" min="0.4" max="3" step="0.01" value="1"></div>
+      <div class="row"><label>속도 <span id="creSpdVal">0.55</span></label><input id="creSpd" type="range" min="0" max="3" step="0.01" value="0.55"></div>
+      <div class="row"><label>회전 <span id="creTurnVal">1.20</span></label><input id="creTurn" type="range" min="0.2" max="4" step="0.05" value="1.2"></div>
+      <div class="row" id="creLayerRow"><label>레이어 <span id="creLayerVal">3</span></label><input id="creLayers" type="range" min="1" max="9" step="1" value="3"></div>
+      <div class="row" id="creDepthRow" style="display:none"><label>깊이 <span id="creDepthVal">0.060</span></label><input id="creDepth" type="range" min="0" max="0.2" step="0.0025" value="0.06"></div>
+      <div class="row"><button id="saveProfile">이 동물 설정 저장</button><button id="removeOne">선택 삭제</button></div>
+      <small class="subtle">이미지 이름을 키로 로컬 저장소에 저장됩니다. 같은 이미지를 다시 올리면 자동 적용.</small>
+    </div>
+
+    <div class="divider"></div>
+    <div class="row"><button id="addSamples">샘플 3장 추가</button><button id="clear">모두 지우기</button><button id="toggleUI">패널 숨김</button></div>
+    <div id="hint">이미지를 업로드하면 홀로그램 카드가 생성되고, <b>자유 이동</b>이 켜져 있으면 스스로 걸어 다닙니다.<br>새 동작: 홀로그램은 사용자의 '앞(전방 반구)'에서만 이동/스폰합니다. 글로브가 홀로그램을 만날 때 투명 픽셀을 통해 글로브가 보입니다.</div>
+  </div>
+  <div id="gear" title="패널 토글(클릭)">⚙️</div>
+  <div id="vrTip">VR 버튼을 누르면 Quest에서 입장합니다. HTTPS 권장.</div>
+  <div id="drop">이미지 파일을 여기에 놓으세요</div>
+  <div id="err"></div>
+
+  <script type="module">
+  import * as THREE from 'https://esm.sh/three@0.156.1';
+  import { OrbitControls } from 'https://esm.sh/three@0.156.1/examples/jsm/controls/OrbitControls.js';
+  import { VRButton } from 'https://esm.sh/three@0.156.1/examples/jsm/webxr/VRButton.js';
+
+  // --- util: angle difference in [-PI, PI]
+  function angleDiff(a, b){ let d=(b-a+Math.PI)% (Math.PI*2); if(d<0) d+=Math.PI*2; return d-Math.PI; }
+  const $=id=>document.getElementById(id);
+
+  // --- global state
+  const state = {
+    creatures: [],
+    mode: 'parallax', layers: 3, depthScale: 0.06,
+    arena: 3.5, wanderOn: true, wanderSpd: 0.55, turnRate: 1.2, separation: 0.6, bobAmp: 0.18,
+    paused:false,
+    vipIndex:-1, vipScale:1.4, vipEnabled:true,
+    sliceEnabled:false, sliceRows:1, sliceCols:1,
+  };
+
+  // --- renderer/scene/camera
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true; renderer.xr.setReferenceSpaceType('local-floor');
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0a0b10);
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100); camera.position.set(0,1.6,5);
+  const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0,1.3,0); controls.enableDamping=true;
+  const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x1a1a1a, 0.9); scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(3,5,2); scene.add(dir);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(9,9,0.05,64), new THREE.MeshStandardMaterial({ color:0x10131c, metalness:0.1, roughness:0.9 })); floor.position.y=-0.025; floor.receiveShadow=true; scene.add(floor);
+  const ringGeo = new THREE.RingGeometry(0.02,0.03,64); const ringMat = new THREE.MeshBasicMaterial({ color:0x5383ff, side:THREE.DoubleSide });
+  const arenaRing = new THREE.Mesh(ringGeo, ringMat); arenaRing.position.y=0.001; arenaRing.rotation.x=-Math.PI/2; arenaRing.scale.set(state.arena,state.arena,1); scene.add(arenaRing);
+  document.body.appendChild(VRButton.createButton(renderer));
+  const errBox=$('err'); function showErr(msg){ errBox.style.display='block'; errBox.textContent=`에러: ${msg}`; } function hideErr(){ errBox.style.display='none'; }
+  window.addEventListener('resize', ()=>{ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+  // --- helper: camera forward (XZ) angle & vector
+  function cameraForwardXZ(){
+    const f = new THREE.Vector3();
+    camera.getWorldDirection(f);
+    f.y = 0;
+    if (f.lengthSq() < 1e-6) f.set(0,0,-1);
+    f.normalize();
+    return f;
+  }
+  function cameraPosition(){
+    const p = new THREE.Vector3(); camera.getWorldPosition(p); return p;
+  }
+  function vecAngleXZ(v){
+    return Math.atan2(v.z, v.x);
+  }
+
+  // --- displacement map from image (grayscale)
+  function makeDisplacementMap(img){ const c=document.createElement('canvas'); const w=Math.min(512,img.width), h=Math.min(512,img.height); c.width=w; c.height=h; const cx=c.getContext('2d'); cx.drawImage(img,0,0,w,h); let data; try{ data=cx.getImageData(0,0,w,h).data; }catch(e){ console.warn('CORS tainted canvas; fallback to parallax'); return null; } const gray=new Uint8Array(w*h*4); for(let i=0,j=0;i<data.length;i+=4,j+=4){ const g=(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114)|0; gray[j]=gray[j+1]=gray[j+2]=g; gray[j+3]=255; } const tex=new THREE.DataTexture(gray,w,h,THREE.RGBAFormat); tex.needsUpdate=true; tex.colorSpace=THREE.SRGBColorSpace; return tex; }
+
+  // --- sprite slicing (rows x cols) returning canvases
+  function sliceImageToCanvases(img, rows, cols){ const arr=[]; const cw=Math.floor(img.width/cols), ch=Math.floor(img.height/rows); for(let r=0;r<rows;r++){ for(let c=0;c<cols;c++){ const can=document.createElement('canvas'); can.width=cw; can.height=ch; const cx=can.getContext('2d'); cx.drawImage(img, c*cw, r*ch, cw, ch, 0,0, cw, ch); arr.push(can); } } return arr; }
+
+  // --- Creature class with front-hemisphere confinement + material/occlusion tweaks
+  class Creature{
+    constructor(options){
+      const {kind, tex, img, aspect, idx, tag} = options;
+      this.kind=kind; this.img=img; this.aspect=aspect; this.tag=tag||'';
+      this.group=new THREE.Group(); this.phase=Math.random()*Math.PI*2; this.heading=Math.random()*Math.PI*2;
+      // per-creature params
+      this.speed=state.wanderSpd; this.turnRate=state.turnRate; this.scale=1; this.layers=state.layers; this.depth=state.depthScale;
+      // smoothing state
+      this.desiredHeading = this.heading;
+      this.angularVelocity = 0; // optional if we extend later
+      this.smoothingFactor = 1.0; // tuning knob, kept default
+      this.buildVisual(tex);
+      // place in front semicircle relative to current camera orientation
+      this.placeInFrontRandom();
+      if(idx===state.vipIndex && state.vipEnabled) this.setVIP(true);
+    }
+
+    // Place creature in front hemisphere (relative to camera) at random radius & angle in [-PI/2,PI/2]
+    placeInFrontRandom(){
+      const camPos = cameraPosition();
+      const f = cameraForwardXZ();
+      const fAng = Math.atan2(f.z, f.x);
+      const r = Math.random()*(state.arena*0.75) + 0.25;
+      const a = fAng + (Math.random()-0.5)*Math.PI; // +/- 90deg
+      this.group.position.set(Math.cos(a)*r + camPos.x, 1.15, Math.sin(a)*r + camPos.z);
+      this.heading = a + Math.PI; // face somewhat inward
+      this.desiredHeading = this.heading;
+      this.group.rotation.y = this.heading + Math.PI;
+    }
+
+    // Keep creature in front hemisphere: clamp polar angle relative to camera forward to +/- 90deg - small epsilon
+    // IMPORTANT: no direct abrupt heading set; instead set desiredHeading so smoothing applies
+    enforceFrontConstraint(){
+      const camPos = cameraPosition();
+      const f = cameraForwardXZ();
+      const fAng = Math.atan2(f.z, f.x);
+      const v = new THREE.Vector3(this.group.position.x - camPos.x, 0, this.group.position.z - camPos.z);
+      const dist = Math.max(0.001, Math.hypot(v.x, v.z));
+      let ang = Math.atan2(v.z, v.x);
+      let rel = angleDiff(fAng, ang); // difference from forward
+      const limit = Math.PI/2 - 0.08; // small buffer so they don't hug the exact border
+      if(Math.abs(rel) > limit){
+        // move the position so object stays within front hemisphere boundary but smoothly adjust heading over time
+        rel = Math.sign(rel)*limit;
+        const newAng = fAng + rel;
+        this.group.position.x = camPos.x + Math.cos(newAng) * dist;
+        this.group.position.z = camPos.z + Math.sin(newAng) * dist;
+        // Set desiredHeading to a value facing roughly inward instead of forcing heading immediately
+        const targetHeading = newAng + Math.PI * 0.9; // roughly face back toward camera
+        // blend desired heading a bit so we don't instantly snap
+        const blend = 0.5;
+        this.desiredHeading = this._shortMixAngle(this.desiredHeading, targetHeading, blend);
+      }
+    }
+
+    // small helper to interpolate angles safely
+    _shortMixAngle(from, to, t){
+      const diff = angleDiff(from, to);
+      return from + diff * THREE.MathUtils.clamp(t, 0, 1);
+    }
+
+    buildVisual(tex){
+      // cleanup
+      while(this.group.children.length) { const c = this.group.children[0]; if(c.material){ if(c.material.map) c.material.map.dispose(); c.material.dispose(); } c.geometry && c.geometry.dispose(); this.group.remove(c); }
+      const w=1.5, h=w/this.aspect;
+      // Shared material factory with alphaTest and depthWrite to allow globe peek-through
+      const makeMat = (map)=> {
+        const m = new THREE.MeshStandardMaterial({
+          map: map, transparent: true, alphaTest: 0.05,
+          side: THREE.DoubleSide, roughness: 0.85, metalness: 0.05
+        });
+        // Important for occlusion: depthWrite true (default) and alphaTest>0 will discard near-transparent pixels so depth isn't written for fully transparent pixels.
+        m.depthWrite = true;
+        m.depthTest = true;
+        m.colorSpace = THREE.SRGBColorSpace;
+        return m;
+      };
+
+      if(this.kind==='depth'){
+        const disp = makeDisplacementMap(this.img);
+        if(!disp){ this.kind='parallax'; }
+        else {
+          const geo = new THREE.PlaneGeometry(w,h,96,96);
+          const mat = makeMat(tex);
+          mat.displacementMap = disp;
+          mat.displacementScale = this.depth;
+          const mesh = new THREE.Mesh(geo, mat);
+          this.group.add(mesh);
+        }
+      }
+      if(this.kind==='parallax'){
+        const L = Math.max(1, Math.floor(this.layers));
+        const depth = Math.max(0.02, this.depth); // layer spacing
+        // create separate planes but reuse material instance is fine — still occlusion works because depth write is enabled and alphaTest will discard nearly-transparent pixels
+        for(let i=0;i<L;i++){
+          const t = (i/(L-1||1)) - 0.5;
+          const mat = makeMat(tex);
+          const plane = new THREE.Mesh(new THREE.PlaneGeometry(w,h,1,1), mat);
+          plane.position.z = t * depth;
+          // rotate each plane slightly for subtle parallax (optional)
+          this.group.add(plane);
+        }
+      }
+      if(this.kind==='billboard'){
+        const mat = makeMat(tex);
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w,h,1,1), mat);
+        this.group.add(mesh);
+      }
+      this.group.scale.setScalar(this.scale);
+    }
+
+    setVIP(on){
+      const s = on ? state.vipScale : this.scale;
+      this.group.scale.setScalar(s);
+      this.group.traverse(o => {
+        if(o.isMesh && o.material){
+          o.material.emissive = new THREE.Color(on?0x333333:0x000000);
+          o.material.emissiveIntensity = on ? 0.6 : 0;
+          o.material.needsUpdate = true;
+        }
+      });
+    }
+
+    steer(dt, others){
+      if(!state.wanderOn) return;
+
+      const pos = this.group.position;
+
+      // --- compute desired heading smoothly (accumulate influences rather than immediately assigning)
+      // Start from current desiredHeading (so changes are incremental)
+      let desired = this.desiredHeading;
+
+      // small random wander influence (scaled by dt to avoid frame-dependent jumps)
+      const wanderStrength = 0.6; // smaller values => smoother wandering
+      desired += (Math.random()-0.5) * this.turnRate * wanderStrength * dt;
+
+      // boundary: if outside, compute a corrective angle and nudge desired towards it (rather than forcing)
+      const r = Math.hypot(pos.x, pos.z), maxR = state.arena*0.98;
+      if(r > maxR){
+        const back = Math.atan2(-pos.z, -pos.x);
+        // nudge desired toward 'back' direction (steer back in)
+        const diffToBack = angleDiff(desired, back);
+        const maxNudge = this.turnRate * dt * 2.2;
+        const nudge = THREE.MathUtils.clamp(diffToBack, -maxNudge, maxNudge);
+        desired = desired - nudge; // move desired toward back (note angleDiff sign)
+      }
+
+      // separation: compute repel vector and nudge desired toward repel direction
+      if(state.separation>0 && others && others.length){
+        let ax=0, az=0;
+        for(const o of others){ if(o===this) continue;
+          const dx = pos.x - o.group.position.x, dz = pos.z - o.group.position.z;
+          const d2 = dx*dx + dz*dz;
+          const minD = 0.9;
+          if(d2>1e-6 && d2 < minD*minD){ const inv = 1/Math.sqrt(d2); ax += dx*inv; az += dz*inv; }
+        }
+        if(ax||az){
+          const repel = Math.atan2(az, ax);
+          const diffRepel = angleDiff(desired, repel);
+          const repelNudge = THREE.MathUtils.clamp(diffRepel, -this.turnRate*dt*2.0, this.turnRate*dt*2.0);
+          desired = desired - repelNudge;
+        }
+      }
+
+      // commit desired to smoothing state
+      this.desiredHeading = desired;
+
+      // apply angular limit: move current heading toward desired by at most maxTurn per frame
+      const maxTurn = Math.max(0.01, this.turnRate * dt * 1.0); // 1.0 is responsiveness; reduce for smoother turns
+      const delta = angleDiff(this.heading, this.desiredHeading);
+      const applied = THREE.MathUtils.clamp(delta, -maxTurn, maxTurn);
+      this.heading += applied;
+
+      // move in XZ plane toward heading
+      pos.x += Math.cos(this.heading) * this.speed * dt;
+      pos.z += Math.sin(this.heading) * this.speed * dt;
+
+      // face where it's heading smoothly (use small interpolation so rotation feels less snapping)
+      const currentRot = this.group.rotation.y;
+      const targetRot = Math.PI + this.heading;
+      const rotDelta = angleDiff(currentRot, targetRot);
+      this.group.rotation.y = currentRot + THREE.MathUtils.clamp(rotDelta, -maxTurn*0.9, maxTurn*0.9);
+
+      // bobbing
+      const t = performance.now()*0.001;
+      this.group.position.y = 1.15 + Math.sin(t + this.phase) * state.bobAmp;
+
+      // ensure creature remains in camera front hemisphere (this will adjust desiredHeading instead of snapping heading)
+      this.enforceFrontConstraint();
+    }
+  }
+
+  // --- helpers: texture builders
+  async function imageFromFile(file){ const url=URL.createObjectURL(file); const img=new Image(); img.crossOrigin='anonymous'; img.src=url; await img.decode().catch(()=>new Promise(res=>img.onload=res)); return img; }
+  function textureFromImage(img){ const tex=new THREE.Texture(img); tex.needsUpdate=true; tex.colorSpace=THREE.SRGBColorSpace; return tex; }
+  function textureFromCanvas(can){ const tex=new THREE.CanvasTexture(can); tex.needsUpdate=true; tex.colorSpace=THREE.SRGBColorSpace; return tex; }
+
+  // --- persistence: per-image profile save/load
+  function profileKey(tag){ return `mythiczoo:profile:${tag}`; }
+  function tryLoadProfile(tag){ try{ const j=localStorage.getItem(profileKey(tag)); return j? JSON.parse(j): null; }catch{ return null; } }
+  function saveProfile(tag, profile){ try{ localStorage.setItem(profileKey(tag), JSON.stringify(profile)); }catch(e){ showErr('프로필 저장 실패: '+e.message); } }
+
+  // --- creature management
+  function addCreature(kind, tex, img, aspect, tag){ const c=new Creature({kind, tex, img, aspect, idx:state.creatures.length, tag}); scene.add(c.group); state.creatures.push(c); refreshCreatureList(); return c; }
+  function removeCreature(idx){ if(idx<0||idx>=state.creatures.length) return; const c=state.creatures[idx]; scene.remove(c.group); state.creatures.splice(idx,1); refreshCreatureList(); if(state.vipIndex===idx) state.vipIndex=-1; }
+
+  // --- UI: list/select & inspector
+  const creSel=$('creSel'); const creMode=$('creMode'); const creScale=$('creScale'); const creLayers=$('creLayers'); const creDepth=$('creDepth'); const creLayerRow=$('creLayerRow'); const creDepthRow=$('creDepthRow'); const creSpd=$('creSpd'); const creTurn=$('creTurn');
+  function refreshCreatureList(){ creSel.innerHTML=''; state.creatures.forEach((c,i)=>{ const opt=document.createElement('option'); opt.value=String(i); opt.textContent=`#${i} ${c.tag||'동물'}`; creSel.appendChild(opt); }); if(state.creatures.length>0){ creSel.value=String(state.creatures.length-1); syncInspector(); } }
+  function syncInspector(){ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; creMode.value=c.kind; creScale.value=c.scale; $('creScaleVal').textContent=Number(c.scale).toFixed(2); creLayers.value=c.layers; $('creLayerVal').textContent=c.layers; creDepth.value=c.depth; $('creDepthVal').textContent=Number(c.depth).toFixed(3); creSpd.value=c.speed; $('creSpdVal').textContent=Number(c.speed).toFixed(2); creTurn.value=c.turnRate; $('creTurnVal').textContent=Number(c.turnRate).toFixed(2); creLayerRow.style.display=(c.kind==='parallax')?'flex':'none'; creDepthRow.style.display=(c.kind==='depth')?'flex':'none'; }
+  creSel.addEventListener('change', syncInspector);
+  creMode.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.kind=creMode.value; const tex=c.group.children[0]?.material?.map || textureFromImage(c.img); c.buildVisual(tex); syncInspector(); });
+  creScale.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.scale=parseFloat(creScale.value); $('creScaleVal').textContent=c.scale.toFixed(2); c.group.scale.setScalar(c.scale); });
+  creLayers.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.layers=parseInt(creLayers.value,10); $('creLayerVal').textContent=c.layers; const tex=c.group.children[0]?.material?.map || textureFromImage(c.img); c.buildVisual(tex); });
+  creDepth.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.depth=parseFloat(creDepth.value); $('creDepthVal').textContent=c.depth.toFixed(3); c.group.traverse(o=>{ if(o.isMesh&&o.material&&o.material.displacementMap){ o.material.displacementScale=c.depth; o.material.needsUpdate=true; }}); });
+  creSpd.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.speed=parseFloat(creSpd.value); $('creSpdVal').textContent=c.speed.toFixed(2); });
+  creTurn.addEventListener('input', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; c.turnRate=parseFloat(creTurn.value); $('creTurnVal').textContent=c.turnRate.toFixed(2); });
+  $('saveProfile').addEventListener('click', ()=>{ const i=parseInt(creSel.value||'-1',10); const c=state.creatures[i]; if(!c) return; const prof={ kind:c.kind, scale:c.scale, layers:c.layers, depth:c.depth, speed:c.speed, turn:c.turnRate }; if(!c.tag){ showErr('이미지 태그(파일명)가 없어 저장 불가'); return; } saveProfile(c.tag, prof); hideErr(); });
+  $('removeOne').addEventListener('click', ()=>{ const i=parseInt(creSel.value||'-1',10); removeCreature(i); });
+
+  // --- Files: addFiles with optional slicing
+  async function addFiles(files){ try{ hideErr(); let created=0; for(const f of files){ if(!(f && (f.type.startsWith('image/')))) continue; const baseTag=(f.name||'image'); const img=await imageFromFile(f); const applyProfile=(c)=>{ const prof=tryLoadProfile(c.tag); if(prof){ c.kind=prof.kind||c.kind; c.scale=prof.scale??c.scale; c.layers=prof.layers??c.layers; c.depth=prof.depth??c.depth; c.speed=prof.speed??c.speed; c.turnRate=prof.turn??c.turnRate; const tex=c.group.children[0]?.material?.map || textureFromImage(c.img); c.buildVisual(tex); } };
+      if(state.sliceEnabled && (state.sliceRows>1 || state.sliceCols>1)){ const cells=sliceImageToCanvases(img, state.sliceRows, state.sliceCols); let idx=0; for(const cell of cells){ const tex=textureFromCanvas(cell); const aspect=cell.width/cell.height; const tag=`${baseTag}#r${Math.floor(idx/state.sliceCols)}c${idx%state.sliceCols}`; const c=addCreature(state.mode, tex, cell, aspect, tag); if(state.vipIndex<0){ state.vipIndex=0; c.setVIP(state.vipEnabled);} applyProfile(c); created++; idx++; } } else { const tex=textureFromImage(img); const aspect=img.width/img.height || (1); const c=addCreature(state.mode, tex, img, aspect, baseTag); if(state.vipIndex<0){ state.vipIndex=0; c.setVIP(state.vipEnabled);} applyProfile(c); created++; } }
+    if(created===0){ showErr('유효한 이미지가 추가되지 않았습니다. 파일 형식 또는 권한을 확인하세요.'); }
+  }catch(e){ console.error(e); showErr(e.message||String(e)); } }
+
+  // --- Drag & drop
+  const drop=$('drop');
+  window.addEventListener('dragenter',e=>{ e.preventDefault(); drop.style.display='flex'; });
+  window.addEventListener('dragover',e=>{ e.preventDefault(); drop.style.display='flex'; });
+  window.addEventListener('dragleave',e=>{ e.preventDefault(); drop.style.display='none'; });
+  window.addEventListener('drop', async e=>{ e.preventDefault(); drop.style.display='none'; await addFiles(e.dataTransfer.files); });
+
+  // --- Global UI bindings
+  $('file').addEventListener('change', e=> addFiles(e.target.files));
+  $('mode').addEventListener('input', e=>{ state.mode=e.target.value; $('depthRow').style.display = state.mode==='depth' ? 'flex':'none'; });
+  $('layers').addEventListener('input', e=>{ state.layers=parseInt(e.target.value,10); $('layerVal').textContent=state.layers; });
+  $('depthScale').addEventListener('input', e=>{ state.depthScale=parseFloat(e.target.value); $('depthVal').textContent=state.depthScale.toFixed(3); });
+  $('arena').addEventListener('input', e=>{ state.arena=parseFloat(e.target.value); $('arenaVal').textContent=state.arena.toFixed(1); arenaRing.scale.set(state.arena,state.arena,1); });
+  $('wanderEn').addEventListener('input', e=>{ state.wanderOn=(e.target.value==='on'); });
+  $('wanderSpd').addEventListener('input', e=>{ state.wanderSpd=parseFloat(e.target.value); $('spdVal').textContent=state.wanderSpd.toFixed(2); state.creatures.forEach(c=>c.speed=state.wanderSpd); });
+  $('turnRate').addEventListener('input', e=>{ state.turnRate=parseFloat(e.target.value); $('turnVal').textContent=state.turnRate.toFixed(2); state.creatures.forEach(c=>c.turnRate=state.turnRate); });
+  $('separation').addEventListener('input', e=>{ state.separation=parseFloat(e.target.value); $('sepVal').textContent=state.separation.toFixed(2); });
+  $('bobAmp').addEventListener('input', e=>{ state.bobAmp=parseFloat(e.target.value); $('bobVal').textContent=state.bobAmp.toFixed(2); });
+  $('vipScale').addEventListener('input', e=>{ state.vipScale=parseFloat(e.target.value); $('vipScaleVal').textContent=state.vipScale.toFixed(2); const vip=state.creatures[state.vipIndex]; if(vip) vip.setVIP(state.vipEnabled); });
+  $('vipEn').addEventListener('input', e=>{ state.vipEnabled=(e.target.value==='on'); const vip=state.creatures[state.vipIndex]; if(vip) vip.setVIP(state.vipEnabled); });
+  $('markVIP').addEventListener('click', ()=>{ if(state.creatures.length===0) return; if(state.vipIndex>=0&&state.vipIndex<state.creatures.length) state.creatures[state.vipIndex].setVIP(false); state.vipIndex=state.creatures.length-1; state.creatures[state.vipIndex].setVIP(state.vipEnabled); });
+  $('toggleUI').addEventListener('click', ()=>{ const ui=$('ui'); ui.style.display=ui.style.display==='none'?'block':'none'; }); $('gear').addEventListener('click', ()=>{ const ui=$('ui'); ui.style.display=ui.style.display==='none'?'block':'none'; });
+  $('sliceEn').addEventListener('input', e=>{ state.sliceEnabled=(e.target.value==='on'); });
+  $('sliceRows').addEventListener('input', e=>{ state.sliceRows=Math.max(1,parseInt(e.target.value,10)||1); });
+  $('sliceCols').addEventListener('input', e=>{ state.sliceCols=Math.max(1,parseInt(e.target.value,10)||1); });
+
+  $('addSamples').addEventListener('click', async ()=>{ const urls=['https://images.unsplash.com/photo-1542601098-8fc114e148e2?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1546182990-dffeafbe841d?q=80&w=1200&auto=format&fit=crop']; for(const url of urls){ const img=new Image(); img.crossOrigin='anonymous'; img.src=url; await img.decode().catch(()=>new Promise(res=>img.onload=res)); const tex=textureFromImage(img); const aspect=img.width/img.height || 1; const c=addCreature(state.mode, tex, img, aspect, '샘플'); if(state.vipIndex<0){ state.vipIndex=0; c.setVIP(state.vipEnabled);} } });
+  $('clear').addEventListener('click', ()=>{ state.creatures.forEach(c=>scene.remove(c.group)); state.creatures.length=0; refreshCreatureList(); state.vipIndex=-1; });
+
+  // --- keys
+  window.addEventListener('keydown', e=>{ if(e.code==='F1'){ e.preventDefault(); const ui=$('ui'); ui.style.display=ui.style.display==='none'?'block':'none'; } if(e.code==='Space'){ state.paused=!state.paused; } if(e.code==='Enter'){ if(state.creatures.length===0) $('addSamples').click(); else state.paused=!state.paused; } if(e.code==='KeyE'){ errBox.style.display=errBox.style.display==='none'?'block':'none'; } if(e.code==='KeyR'){ $('clear').click(); } });
+
+  // --- Globe: a moving sphere that crosses the front arena so you can see intersection with holograms
+  const globeGroup = new THREE.Group(); scene.add(globeGroup);
+  const globeGeo = new THREE.SphereGeometry(0.18, 32, 32);
+  const globeMat = new THREE.MeshStandardMaterial({ color: 0xff7f50, emissive:0x110000, roughness:0.4, metalness:0.1 });
+  const globe = new THREE.Mesh(globeGeo, globeMat);
+  globeGroup.add(globe);
+  globe.position.set(0,1.15, -Math.max(1.0, state.arena*0.25)); // initial in front
+  let globePhase = 0;
+
+  // --- animate
+  const clock=new THREE.Clock();
+  function render(){
+    try{
+      const dt = Math.min(0.033, clock.getDelta());
+      if(!state.paused){
+        controls.update();
+        const arr = state.creatures;
+        for(let i=0;i<arr.length;i++) arr[i].steer(dt, arr);
+
+        // globe motion: move left->right in front of camera in world-space but remain roughly in front hemisphere:
+        globePhase += dt * 0.6; // speed
+        // determine front center relative to camera, fixed small distance in front of camera
+        const camPos = cameraPosition();
+        const f = cameraForwardXZ();
+        const fPerp = new THREE.Vector3(-f.z, 0, f.x); // perpendicular on XZ
+        const center = new THREE.Vector3().copy(camPos).addScaledVector(f, Math.max(1.2, state.arena * 0.25)); // center in front
+        const span = Math.max(0.8, state.arena*0.9);
+        globe.position.copy(center).addScaledVector(fPerp, Math.sin(globePhase)*span*0.5);
+        globe.position.y = 1.15 + Math.sin(globePhase*1.3)*0.12;
+
+        // ensure globe is in front (should be by construction)
+        // If any creature plane covers globe, because creature materials use alphaTest and depthWrite true, globe will be visible through transparent parts.
+      }
+      renderer.render(scene,camera);
+    }catch(err){
+      console.error(err); showErr(err.message||String(err));
+    }
+  }
+  renderer.setAnimationLoop(render);
+
+  // --- tests (do not remove)
+  (function(){ console.assert(!!THREE && !!THREE.WebGLRenderer,'THREE loaded'); console.assert(typeof OrbitControls==='function','OrbitControls available'); console.assert(typeof VRButton.createButton==='function','VRButton available'); console.assert(Math.abs(angleDiff(0,Math.PI)-Math.PI)<1e-6,'angleDiff ok'); })();
+  (async function(){ // displacement & creature build
+    const c=document.createElement('canvas'); c.width=4; c.height=4; const x=c.getContext('2d'); const g=x.createLinearGradient(0,0,4,4); g.addColorStop(0,'#000'); g.addColorStop(1,'#fff'); x.fillStyle=g; x.fillRect(0,0,4,4);
+    const img=new Image(); img.src=c.toDataURL('image/png'); await img.decode().catch(()=>new Promise(res=>img.onload=res));
+    const disp=makeDisplacementMap(img); console.assert(!!disp && disp.isTexture,'disp created');
+    const tex=textureFromImage(img); const cr=new Creature({kind:'parallax',tex,img,aspect:1,idx:-1}); console.assert(cr.group.children.length>=1,'Creature built');
+  })();
+  (function(){ const tag='__test__'; const p={kind:'billboard',scale:1.2,layers:5,depth:0.03,speed:0.9,turn:1.7}; saveProfile(tag,p); const got=tryLoadProfile(tag); console.assert(got && got.scale===1.2 && got.layers===5,'profile r/w'); })();
+
+  </script>
+</body>
+</html>
